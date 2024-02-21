@@ -1,6 +1,6 @@
 import random
 import networkx as nx
-from ex2 import InfinitePirateAgent, PirateAgent, ids, OptimalPirateAgent
+from ex2_322620873_314779166 import InfinitePirateAgent, PirateAgent, ids, OptimalPirateAgent
 from additional_inputs import additional_inputs
 from inputs import small_inputs
 import logging

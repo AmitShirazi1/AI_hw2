@@ -1,4 +1,4 @@
-ids = ["111111111", "222222222"]
+ids = ["322620873", "314779166"]
 
 
 class OptimalPirateAgent:
@@ -13,8 +13,12 @@ class PirateAgent:
     def __init__(self, initial):
         self.initial = initial
 
+    def actions():
+        return tuple_of_actions
+
     def act(self, state):
-        raise NotImplemented
+        turns_to_go = state['turns_to_go'] if state['infinite'] is False else None
+        for action in 
 
 
 class InfinitePirateAgent:
