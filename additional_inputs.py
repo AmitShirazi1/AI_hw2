@@ -72,9 +72,8 @@ additional_inputs = [
                                            "prob_change_location": 0.4}
                       },
         "marine_ships": {'marine_1': {"index": 0,
-                                      "loation": (1, 1),
                                       "path": [(1, 1), (2, 1)]},
-                         "larry the marine": {"index": 0, "location": (1, 2),
+                         "larry the marine": {"index": 0,
                                               "path": [(5, 6), (4, 6), (4, 7)]},
                          },
         "turns to go": 100
