@@ -9,9 +9,11 @@ from itertools import product
 class OptimalPirateAgent:
     def __init__(self, initial):
         self.map = initial['map']
-        base_row = [x for x in self.initial['map'] if 'B' in x][0]
-        self.base = (self.initial['map'].index(base_row), base_row.index('B'))
+        self.time_step = 1
+        base_row = [x for x in self.map if 'B' in x][0]
+        self.base = (self.map.index(base_row), base_row.index('B'))
         state_dict = dict()
+
 
         possible_locations = list()
         for i in range(len(self.map)):
@@ -30,9 +32,20 @@ class OptimalPirateAgent:
         all_states = list(product(*state_dict.values()))  # A cartesian product, in order to get all possible combinations of states.
         self.next_states = dict()
 
-        self.value_iterations = {state: [(0, None)]*100 for state in all_states} # A dictionary of all possible states, with a list of 100 tuples, each tuple contains the action that maximizes the value and the value of the state.
+        self.value_iterations = {state: [(0, None)]*(initial['turns to go']+1) for state in all_states} # A dictionary of all possible states, with a list of 100 tuples, each tuple contains the action that maximizes the value and the value of the state.
         # self.value_iterations[state] = (value of the state, action that maximizes the value)
+        
+        self.initial_state = self.create_state(initial)
 
+        self.len_rows = len(self.map)
+        self.len_cols = len(self.map[0])
+        for t in range(1, 1+initial['turns to go']):
+            self.updating_value(self.initial_state, t)
+
+    def is_valid_location(self, x, y):
+        return (0 <= x < self.len_rows) and (0 <= y < self.len_cols) and (self.map[x][y] != 'I')
+    
+    def create_state(self, initial):
         pirates_info = tuple()
         for pirate in initial['pirate_ships'].keys():
             pirates_info += ((pirate, initial['pirate_ships'][pirate]['location'], initial['pirate_ships'][pirate]['capacity']),)
@@ -46,24 +59,15 @@ class OptimalPirateAgent:
             treasures_locations += ((treasure, initial['treasures'][treasure]['location']),)
         
         marines_locations = tuple()
-        # self.marines_paths = dict()
+        self.marines_paths = dict()
         for marine in initial['marine_ships'].keys():
-            # self.marines_paths[marine[0]] = initial['marine_ships'][marine]['path']
+            self.marines_paths[marine] = initial['marine_ships'][marine]['path']
             marines_locations += ((marine, initial['marine_ships'][marine]['index']),)
         
-        # self.all_states = dict()
-        self.initial_state = (pirates_info, treasures_locations, marines_locations)
+        return (pirates_info, treasures_locations, marines_locations)
 
-        self.len_rows = self.map.shape[0]
-        self.len_cols = self.map.shape[1]
-        self.actions(self.initial_state)
-
-    def is_valid_location(self, x, y):
-        return (0 <= x < self.len_rows) and (0 <= y < self.len_cols) and (self.map[x][y] != 'I')
 
     def actions(self, state):
-        if state in self.all_states:
-            return
         pirates_actions = dict()
         pirates_info = state[0]
         for pirate in pirates_info:
@@ -86,12 +90,10 @@ class OptimalPirateAgent:
         all_possible_actions.append('reset')
         all_possible_actions.append('terminate')
         
-        for action in all_possible_actions:
-            self.all_states[state].append((action, self.sum_values_of_next_states(state, action)))
-        # return all_possible_actions
+        return all_possible_actions
             
     def find_next_states(self, state, action):
-        next_states = list()
+        next_states_list = list()
         new_state_reward = 0
         pirates_info = tuple()
 
@@ -100,12 +102,11 @@ class OptimalPirateAgent:
                 pirates_info += ((state[0][p_idx][0], self.initial_state[0][p_idx][1], state[0][p_idx][2]),)
             prob = 1  # Probability of reacing this state given this action.
             new_state_reward = RESET_PENALTY
-            next_states.append(((pirates_info, self.initial_state[1], self.initial_state[2]), prob, new_state_reward)) # New state: (pirates_info, self.initial_state[1], self.initial_state[2])
+            next_states_list.append(((pirates_info, self.initial_state[1], self.initial_state[2]), prob, new_state_reward)) # New state: (pirates_info, self.initial_state[1], self.initial_state[2])
         
         elif action == 'terminate':
             prob = 1
-            next_states.append(None, prob, new_state_reward)  # New state: None (game is over, no next state).
-            # TODO: Address to None when acting in the game.
+            next_states_list.append((None, prob, new_state_reward))  # New state: None (game is over, no next state).
         
         else:
             marines_info = {marine[0]: list() for marine in state[2]}
@@ -129,13 +130,13 @@ class OptimalPirateAgent:
                 for possible_location in self.treasures[treasure[0]]['possible_locations']:
                     prob = self.treasures[treasure[0]]['prob_change_location']
                     if possible_location == treasure[1]:
-                        prob += (1 - 0.1)
+                        prob += (1 - prob*len(self.treasures[treasure[0]]['possible_locations']))
                     treasures_info[treasure[0]].append((treasure[0], possible_location, prob))
             all_treasures_possible_locations_combinations = list(product(*treasures_info.values()))  # A cartesian product, in order to get all possible combinations of treasures' locations.
 
             # TODO: Implement pirates rewards, cartesian product of all possible marines and treasures combinations actions.
             # multiply probabilities of marines and treasures combination. p*value(state)- value of the reward from the action if marine encounters a pirates
-            sum_all_states = 0
+            
             for marines_action in all_marines_possible_locations_combinations:
                 for treasures_action in all_treasures_possible_locations_combinations:
                     prob = 1
@@ -146,19 +147,21 @@ class OptimalPirateAgent:
                     for marine_action in marines_action:
                         marine_loc = self.marines_paths[marine_action[0]][marine_action[1]]
                         for pirate, pirate_action in zip(state[0], action):
+                            capacity = pirate[2]
                             pirate_next_location = pirate[1]  # If action is not 'sail', pirate_next_location doesn't change.
                             if pirate_action[0] == 'deposit':
-                                new_state_reward += DROP_IN_DESTINATION_REWARD * (2 - pirate[2])
-                                pirates_info += ((pirate[0], pirate_next_location, 2),)
+                                new_state_reward += DROP_IN_DESTINATION_REWARD * (2 - capacity)
+                                capacity = 2
                             else:
                                 if action[0] == 'sail':
                                     pirate_next_location = action[2]
                                 if pirate_next_location == marine_loc:
                                     new_state_reward += MARINE_COLLISION_PENALTY
-                                    pirates_info += ((pirate[0], pirate_next_location, 2),)
+                                    capacity = 2
                                 else:
                                     if action[0] == 'collect':
-                                        pirates_info += ((pirate[0], pirate_next_location, pirate[2]-1),)
+                                        capacity -= 1
+                            pirates_info += ((pirate[0], pirate_next_location, capacity),)
                         prob *= marine_action[2]
                         marines_locations += ((marine_action[0], marine_action[1]),)
 
@@ -166,152 +169,104 @@ class OptimalPirateAgent:
                         prob *= treasure_action[2]
                         treasures_locations += ((treasure_action[0], treasure_action[1]),)
 
-                next_states.append((pirates_info, treasures_locations, marines_locations), prob, new_state_reward)
-        next_states[(state, action)] = next_states
+                next_states_list.append(((pirates_info, treasures_locations, marines_locations), prob, new_state_reward))
+        self.next_states[(state, action)] = next_states_list
 
     def updating_value(self, state, t):
         for action in self.actions(state): # all possible actions of the state
+            if action == 'terminate':
+                self.value_iterations[state][t] = (self.value_iterations[state][t-1][0], 'terminate')
+                continue
             if (state, action) not in self.next_states:
                 self.find_next_states(state, action)
-            next_states = self.next_states[(state, action)]
-            value_of_action = sum(next_state[1] * (next_state[2] + self.value_iterations[next_state[0]][t-1][0]) for next_state in next_states)
+            next_states_list = self.next_states[(state, action)]
+            value_of_action = sum(next_state[1] * (next_state[2] + self.value_iterations[next_state[0]][t-1][0]) for next_state in next_states_list)
             if value_of_action > self.value_iterations[state][t][0]:
                 self.value_iterations[state][t] = (value_of_action, action)
-            
-# TODO: See how to change the other functions.
-            
-    def calculate_max_action(self, state):
-        max_value = float('-inf')
-        max_action = None
-        for action in self.action(state): # all possible actions of the state
-            temp = self.find_next_state(state, action)
-            if temp > max_value:
-                max_value = temp
-                max_action = action
-        self.all_states[state] = (max_action, max_value)
-
-    def calculate_value_of_state(self, state):
-        if state in self.all_states.keys():
-            return
-        self.calculate_max_action(state)
-            
-
-    def sum_values_of_next_states(self, state, action):
-        new_state_reward = 0
-        if action == 'reset':
-            new_state_reward = RESET_PENALTY
-        # If action == 'terminate', new_state_reward doesn't change.
-        else:
-            for pirate in state[0]:
-                pirate_next_location = pirate[1]  # If action is not 'sail', pirate_next_location doesn't change.
-                if action[0] == 'deposit':
-                    new_state_reward += DROP_IN_DESTINATION_REWARD * (2 - pirate[2])
-                else:
-                    if action[0] == 'sail':
-                        pirate_next_location = action[2]
-
-                    # If pirate_next_location can meet a marine in the next step.
-                    p = 0
-                    for marine in state[2]:
-                        if len(self.marines_paths[marine[0]]) == 1:
-                            if pirate_next_location == self.marines_paths[marine[0]][0]:
-                                p = 1
-                                break
-                        if marine[1] == 0:
-                            if (pirate_next_location == self.marines_paths[marine[0]][0]) or (pirate_next_location == self.marines_paths[marine[0]][1]):
-                                p += 1/2
-                        elif marine[1] == len(self.marines_paths[marine[0]]) - 1:
-                            if (pirate_next_location == self.marines_paths[marine[0]][-1]) or (pirate_next_location == self.marines_paths[marine[0]][-2]):
-                                p += 1/2
-                        else:
-                            if (pirate_next_location == self.marines_paths[marine[0]][marine[1]]) or (pirate_next_location == self.marines_paths[marine[0]][marine[1]-1]) or (pirate_next_location == self.marines_paths[marine[0]][marine[1]+1]):
-                                p += 1/3
-                        if p > 1:
-                            p = 1
-                            break
-                    new_state_reward += p * MARINE_COLLISION_PENALTY
-        new_state = 
-        # TODO: Move everything in state, like treasures and marines, to the next state, and update the self.all_states dictionary.
-        return new_state_reward
-        
-""" GPT Code: """
-import numpy as np
-class PirateGame:
-    def _init_(self, num_pirates, num_treasures, num_marines):
-        self.num_pirates = num_pirates
-        self.num_treasures = num_treasures
-        self.num_marines = num_marines
-        self.state = self.initialize_game()
-
-    def initialize_game(self):
-        # Placeholder function to initialize the game state
-        # Implement this based on your actual game representation
-        pass
-
-    def get_possible_actions(self):
-        # Placeholder function to return possible actions for a pirate
-        # Implement this based on your actual game representation
-        pass
-
-    def take_action(self, pirate, action):
-        # Placeholder function to update the game state based on the chosen action
-        # Implement this based on your actual game representation
-        pass
-
-    def calculate_reward(self, pirate, action):
-        # Placeholder function to calculate the reward for a given action
-        # Implement this based on your reward structure
-        pass
-
-    def q_learning(game, num_episodes=1000, learning_rate=0.1, discount_factor=0.9, exploration_prob=0.1):
-        # Q-table initialization
-        q_table = np.zeros((game.num_pirates, game.num_treasures, game.num_marines, len(game.get_possible_actions())))
-
-        for episode in range(num_episodes):
-            state = game.initialize_game()  # Reset the game state for each episode
-
-            for pirate in range(game.num_pirates):
-                while not game.is_game_over():
-                    # Choose action epsilon-greedy
-                    if np.random.rand() < exploration_prob:
-                        action = np.random.choice(game.get_possible_actions())
-                    else:
-                        action = np.argmax(q_table[pirate, state[pirate]])
-
-                    # Take the chosen action
-                    next_state = game.take_action(pirate, action)
-
-                    # Calculate reward
-                    reward = game.calculate_reward(pirate, action)
-
-                    # Update Q-value
-                    best_next_action = np.argmax(q_table[pirate, next_state[pirate]])
-                    q_table[pirate, state[pirate], action] += learning_rate * (
-                        reward + discount_factor * q_table[pirate, next_state[pirate], best_next_action]
-                        - q_table[pirate, state[pirate], action]
-                    )
-
-                    # Move to the next state
-                    state = next_state
-
-            return q_table
-
-        # Example Usage
-        num_pirates = 2
-        num_treasures = 3
-        num_marines = 2
-
-        game = PirateGame(num_pirates, num_treasures, num_marines)
-        q_table = q_learning(game)
-
-        # Use the learned Q-table for decision-making during gameplay
-        # (This part heavily depends on your actual game implementation)
-        # You might need additional functions to convert state to Q-table indices and vice versa
-""" End of GPT code. """
-
-
+    
     def act(self, state):
-        raise NotImplemented
+        state = self.create_state(state)
+        action = self.value_iterations[state][self.time_step][1]
+        if self.time_step == 100:
+            return None
+        self.time_step += 1
+        return action
+     
+# """ GPT Code: """
+# import numpy as np
+# class PirateGame:
+#     def _init_(self, num_pirates, num_treasures, num_marines):
+#         self.num_pirates = num_pirates
+#         self.num_treasures = num_treasures
+#         self.num_marines = num_marines
+#         self.state = self.initialize_game()
+
+#     def initialize_game(self):
+#         # Placeholder function to initialize the game state
+#         # Implement this based on your actual game representation
+#         pass
+
+#     def get_possible_actions(self):
+#         # Placeholder function to return possible actions for a pirate
+#         # Implement this based on your actual game representation
+#         pass
+
+#     def take_action(self, pirate, action):
+#         # Placeholder function to update the game state based on the chosen action
+#         # Implement this based on your actual game representation
+#         pass
+
+#     def calculate_reward(self, pirate, action):
+#         # Placeholder function to calculate the reward for a given action
+#         # Implement this based on your reward structure
+#         pass
+
+#     def q_learning(game, num_episodes=1000, learning_rate=0.1, discount_factor=0.9, exploration_prob=0.1):
+#         # Q-table initialization
+#         q_table = np.zeros((game.num_pirates, game.num_treasures, game.num_marines, len(game.get_possible_actions())))
+
+#         for episode in range(num_episodes):
+#             state = game.initialize_game()  # Reset the game state for each episode
+
+#             for pirate in range(game.num_pirates):
+#                 while not game.is_game_over():
+#                     # Choose action epsilon-greedy
+#                     if np.random.rand() < exploration_prob:
+#                         action = np.random.choice(game.get_possible_actions())
+#                     else:
+#                         action = np.argmax(q_table[pirate, state[pirate]])
+
+#                     # Take the chosen action
+#                     next_state = game.take_action(pirate, action)
+
+#                     # Calculate reward
+#                     reward = game.calculate_reward(pirate, action)
+
+#                     # Update Q-value
+#                     best_next_action = np.argmax(q_table[pirate, next_state[pirate]])
+#                     q_table[pirate, state[pirate], action] += learning_rate * (
+#                         reward + discount_factor * q_table[pirate, next_state[pirate], best_next_action]
+#                         - q_table[pirate, state[pirate], action]
+#                     )
+
+#                     # Move to the next state
+#                     state = next_state
+
+#             return q_table
+
+#         # Example Usage
+#         num_pirates = 2
+#         num_treasures = 3
+#         num_marines = 2
+
+#         game = PirateGame(num_pirates, num_treasures, num_marines)
+#         q_table = q_learning(game)
+
+#         # Use the learned Q-table for decision-making during gameplay
+#         # (This part heavily depends on your actual game implementation)
+#         # You might need additional functions to convert state to Q-table indices and vice versa
+# """ End of GPT code. """
+
 
 # TODO: move to optimal, change act to O(1) and init can be very large.
 #       Calculate all possible routes.

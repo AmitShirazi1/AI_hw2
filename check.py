@@ -271,17 +271,17 @@ def main():
     print(f"IDS: {ids}")
     for an_input in small_inputs:
         try:
-            print(an_input)
+            # print(an_input)
             my_problem = PirateStochasticProblem(an_input)
             my_problem.run_round()
         except EndOfGame:
             continue
-    for an_input in additional_inputs:
-        try:
-            my_problem = PirateStochasticProblem(an_input)
-            my_problem.run_round()
-        except EndOfGame:
-            continue
+    # for an_input in additional_inputs:
+    #     try:
+    #         my_problem = PirateStochasticProblem(an_input)
+    #         my_problem.run_round()
+    #     except EndOfGame:
+    #         continue
 
 
 if __name__ == '__main__':
