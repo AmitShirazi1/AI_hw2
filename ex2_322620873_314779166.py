@@ -3,8 +3,10 @@ ids = ["322620873", "314779166"]
 RESET_PENALTY = -2
 DROP_IN_DESTINATION_REWARD = 4
 MARINE_COLLISION_PENALTY = -1
+GAMMA = 0.9
 
 from itertools import product
+import random
 
 class OptimalPirateAgent:
     def __init__(self, initial):
@@ -32,15 +34,19 @@ class OptimalPirateAgent:
         all_states = list(product(*state_dict.values()))  # A cartesian product, in order to get all possible combinations of states.
         self.next_states = dict()
 
-        self.value_iterations = {state: [(0, None)]*(initial['turns to go']+1) for state in all_states} # A dictionary of all possible states, with a list of 100 tuples, each tuple contains the action that maximizes the value and the value of the state.
+        self.value_iterations = dict() #{state: [(0, None)]*(initial['turns to go']+1) for state in all_states} # A dictionary of all possible states, with a list of 100 tuples, each tuple contains the action that maximizes the value and the value of the state.
         # self.value_iterations[state] = (value of the state, action that maximizes the value)
         
         self.initial_state = self.create_state(initial)
 
         self.len_rows = len(self.map)
         self.len_cols = len(self.map[0])
-        for t in range(1, 1+initial['turns to go']):
-            self.updating_value(self.initial_state, t)
+        for t in range(0, 1+initial['turns to go']):
+            for state in all_states:
+                if t == 0:
+                    self.value_iterations[state] = [(0, None)]*(1+initial['turns to go'])
+                else:
+                    self.updating_value(state, t)
 
     def is_valid_location(self, x, y):
         return (0 <= x < self.len_rows) and (0 <= y < self.len_cols) and (self.map[x][y] != 'I')
@@ -70,31 +76,34 @@ class OptimalPirateAgent:
     def actions(self, state):
         pirates_actions = dict()
         pirates_info = state[0]
+        all_possible_actions = list()
+
+        all_possible_actions.append('terminate')
+        all_possible_actions.append('reset')
+
         for pirate in pirates_info:
             pirates_actions[pirate] = list()
+            pirates_actions[pirate].append(('wait', pirate[0]))
+
             for index_change in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                 new_x = pirate[1][0] + index_change[0]
                 new_y = pirate[1][1] + index_change[1]
                 if self.is_valid_location(new_x, new_y):
                     pirates_actions[pirate].append(('sail', pirate[0], (new_x, new_y)))
 
-                if pirate[2] > 0 and self.map[new_x][new_y] == 'I':
-                    for treasure in state[1]:
-                        if (new_x, new_y) == treasure[1]:
-                            pirates_actions[pirate].append(('collect', pirate[0], treasure))
+                    if pirate[2] > 0 and self.map[new_x][new_y] == 'I':
+                        for treasure in state[1]:
+                            if (new_x, new_y) == treasure[1]:
+                                pirates_actions[pirate].append(('collect', pirate[0], treasure))
             if (pirate[1] == self.base) and (pirate[2] < 2):
                 pirates_actions[pirate].append(('deposit', pirate[0]))
-            pirates_actions[pirate].append(('wait', pirate[0]))
-            
-        all_possible_actions = list(product(*pirates_actions.values()))
-        all_possible_actions.append('reset')
-        all_possible_actions.append('terminate')
-        
+
+        all_possible_actions += list(product(*pirates_actions.values()))
+    
         return all_possible_actions
             
     def find_next_states(self, state, action):
         next_states_list = list()
-        new_state_reward = 0
         pirates_info = tuple()
 
         if action == 'reset':
@@ -139,6 +148,7 @@ class OptimalPirateAgent:
             
             for marines_action in all_marines_possible_locations_combinations:
                 for treasures_action in all_treasures_possible_locations_combinations:
+                    new_state_reward = 0
                     prob = 1
                     pirates_info = tuple()
                     treasures_locations = tuple()
@@ -153,13 +163,13 @@ class OptimalPirateAgent:
                                 new_state_reward += DROP_IN_DESTINATION_REWARD * (2 - capacity)
                                 capacity = 2
                             else:
-                                if action[0] == 'sail':
-                                    pirate_next_location = action[2]
+                                if pirate_action[0] == 'sail':
+                                    pirate_next_location = pirate_action[2]
                                 if pirate_next_location == marine_loc:
                                     new_state_reward += MARINE_COLLISION_PENALTY
                                     capacity = 2
                                 else:
-                                    if action[0] == 'collect':
+                                    if pirate_action[0] == 'collect':
                                         capacity -= 1
                             pirates_info += ((pirate[0], pirate_next_location, capacity),)
                         prob *= marine_action[2]
@@ -173,24 +183,53 @@ class OptimalPirateAgent:
         self.next_states[(state, action)] = next_states_list
 
     def updating_value(self, state, t):
+        actions_of_equal_value = list()
         for action in self.actions(state): # all possible actions of the state
             if action == 'terminate':
                 self.value_iterations[state][t] = (self.value_iterations[state][t-1][0], 'terminate')
                 continue
             if (state, action) not in self.next_states:
                 self.find_next_states(state, action)
+
             next_states_list = self.next_states[(state, action)]
-            value_of_action = sum(next_state[1] * (next_state[2] + self.value_iterations[next_state[0]][t-1][0]) for next_state in next_states_list)
+            value_of_action = GAMMA * sum(next_state[1] * (next_state[2] + self.value_iterations[next_state[0]][t-1][0]) for next_state in next_states_list)
+
             if value_of_action > self.value_iterations[state][t][0]:
-                self.value_iterations[state][t] = (value_of_action, action)
+                actions_of_equal_value = [(value_of_action, action)]
+
+            elif value_of_action == self.value_iterations[state][t][0]:
+                actions_of_equal_value.append((value_of_action, action))
+        value_and_action = random.sample(actions_of_equal_value, 1)[0]
+        self.value_iterations[state][t] = value_and_action
+
     
     def act(self, state):
+        # state = self.create_state(state)
+        # action = self.value_iterations[state][self.time_step][1]
+        # if self.time_step == 100:
+        #     return 'terminate'
+        # print(self.time_step)
+        # self.time_step += 1
+        # print(state)
+        # print('value:', self.value_iterations[state][self.time_step][0])
+        # print('action:', action)
+        # return action
+
+        # state = self.create_state(state)
+        # action = self.value_iterations[state][self.time_step][1]
+        # if self.time_step == 0:
+        #     return 'terminate'
+        # print(self.time_step)
+        # self.time_step -= 1
+        # print(state)
+        # print('value:', self.value_iterations[state][self.time_step][0])
+        # return action
+
+
         state = self.create_state(state)
-        action = self.value_iterations[state][self.time_step][1]
-        if self.time_step == 100:
-            return None
-        self.time_step += 1
-        return action
+        print(state)
+        print('value:', self.value_iterations[state][100][0])
+        return self.value_iterations[state][100][1]
      
 # """ GPT Code: """
 # import numpy as np
