@@ -15,6 +15,7 @@ class OptimalPirateAgent:
         base_row = [x for x in self.map if 'B' in x][0]
         self.base = (self.map.index(base_row), base_row.index('B'))
         state_dict = dict()
+        self.terminated = False
 
 
         possible_locations = list()
@@ -50,6 +51,9 @@ class OptimalPirateAgent:
 
     def is_valid_location(self, x, y):
         return (0 <= x < self.len_rows) and (0 <= y < self.len_cols) and (self.map[x][y] != 'I')
+    
+    def is_valid_island(self, x, y):
+        return (0 <= x < self.len_rows) and (0 <= y < self.len_cols) and (self.map[x][y] == 'I')
     
     def create_state(self, initial):
         pirates_info = tuple()
@@ -91,10 +95,10 @@ class OptimalPirateAgent:
                 if self.is_valid_location(new_x, new_y):
                     pirates_actions[pirate].append(('sail', pirate[0], (new_x, new_y)))
 
-                    if pirate[2] > 0 and self.map[new_x][new_y] == 'I':
-                        for treasure in state[1]:
-                            if (new_x, new_y) == treasure[1]:
-                                pirates_actions[pirate].append(('collect', pirate[0], treasure))
+                if self.is_valid_island(new_x, new_y) and pirate[2] > 0:
+                    for treasure in state[1]:
+                        if (new_x, new_y) == treasure[1]:
+                            pirates_actions[pirate].append(('collect', pirate[0], treasure[0]))
             if (pirate[1] == self.base) and (pirate[2] < 2):
                 pirates_actions[pirate].append(('deposit', pirate[0]))
 
@@ -189,53 +193,28 @@ class OptimalPirateAgent:
 
 
     def updating_value(self, state, t):
-        actions_of_equal_value = [(float('-inf'), None)]
+        max_value_and_action = (float('-inf'), None)
         for action in self.actions(state): # all possible actions of the state
             if action == 'terminate':
-                actions_of_equal_value.append((self.value_iterations[state][t-1][0], 'terminate'))
+                max_value_and_action = (0, 'terminate') #[(self.value_iterations[state][t-1][0], 'terminate')]
                 continue
             if (state, action) not in self.next_states:
                 self.find_next_states(state, action)
 
             next_states_list = self.next_states[(state, action)]
-            value_of_action = sum(next_state[1] * (next_state[2] + self.value_iterations[next_state[0]][t-1][0]) for next_state in next_states_list)
+            value_of_action = GAMMA * sum(next_state[1] * (next_state[2] + self.value_iterations[next_state[0]][t-1][0]) for next_state in next_states_list)
 
-            if value_of_action > actions_of_equal_value[0][0]:
-                actions_of_equal_value = [(value_of_action, action)]
-
-            elif value_of_action == actions_of_equal_value[0][0]:
-                actions_of_equal_value.append((value_of_action, action))
-        value_and_action = random.sample(actions_of_equal_value, 1)[0]
-        self.value_iterations[state][t] = value_and_action
-
-    
+            if value_of_action >= max_value_and_action[0]:
+                max_value_and_action = (value_of_action, action)
+        self.value_iterations[state][t] = max_value_and_action  
+             
+                
     def act(self, state):
-        # state = self.create_state(state)
-        # action = self.value_iterations[state][self.time_step][1]
-        # if self.time_step == 100:
-        #     return 'terminate'
-        # print(self.time_step)
-        # self.time_step += 1
-        # print(state)
-        # print('value:', self.value_iterations[state][self.time_step][0])
-        # print('action:', action)
-        # return action
-
-        # state = self.create_state(state)
-        # action = self.value_iterations[state][self.time_step][1]
-        # if self.time_step == 0:
-        #     return 'terminate'
-        # print(self.time_step)
-        # self.time_step -= 1
-        # print(state)
-        # print('value:', self.value_iterations[state][self.time_step][0])
-        # return action
-
-
         state = self.create_state(state)
         print(state)
-        print(len(self.value_iterations.keys()))
-        print('value:', self.value_iterations[state][100][0])
+        # print('value:', self.value_iterations[state][100][0])
+        print('action:', self.value_iterations[state][100][1])
+        print()
         return self.value_iterations[state][100][1]
      
 # """ GPT Code: """
