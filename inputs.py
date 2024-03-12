@@ -18,6 +18,7 @@ small_inputs = [
                       },
         "marine_ships": {'marine_1': {"index": 0,
                                       "path": [(1, 1)]}},
+        "turns to go": 100
     },
     {
         "optimal": True,
