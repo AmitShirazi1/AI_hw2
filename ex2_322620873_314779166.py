@@ -614,29 +614,43 @@ class InfinitePirateAgent:
             
             
     def find_next_states(self, state, action):
+        """ Find all next states we can get to from the given state and action.
+
+            @param state: A tuple representing the current state.
+            @param action: A tuple representing the action we took from the current state.
+            
+            @return: A list of all possible next states given this state and action,
+                     where each next state is represented by a tuple of (state, probability, reward).
+        """
         next_states_list = list()
         pirates_info = tuple()
 
+        # If the action is 'reset', we add the initial state to the list of all next states.
         if action == 'reset':
-            prob = 1  # Probability of reacing this state given this action.
-            new_state_reward = RESET_PENALTY
+            prob = 1  # Probability of reaching the initial state with the action 'reset'.
+            new_state_reward = RESET_PENALTY  # Reward of making the action 'reset'.
             next_states_list.append((self.initial_state, prob, new_state_reward)) # New state: (pirates_info, self.initial_state[1], self.initial_state[2])
         
+        # If the action is 'terminate', we add None to the list of all next states (game is over, no next state).
         elif action == 'terminate':
-            prob = 1
-            next_states_list.append((None, prob, new_state_reward))  # New state: None (game is over, no next state).
+            prob = 1  # Probability of reacing None given this action.
+            next_states_list.append((None, prob, new_state_reward))  # New state: None, Reward: 0.
         
         else:
-            marines_info = {marine[0]: list() for marine in state[2]}
+            marines_info = {marine[0]: list() for marine in state[2]}  # A dictionary of all possible indices in the path and the probability of it, for each marine.
             for marine in state[2]:
+                # If the marine has only one location in its path, we add it to the list of all possible indices with probability 1.
                 if len(self.marines_paths[marine[0]]) == 1:
                     marines_info[marine[0]].append((marine[0], marine[1], 1))
+                # If the marine is in the first location in its path, we add it to the list of all possible indices with probability 1/2, and also probability 1/2 to the next location in the path.
                 elif marine[1] == 0:
                     marines_info[marine[0]].append((marine[0], marine[1], 1/2))
                     marines_info[marine[0]].append((marine[0], marine[1]+1, 1/2))
+                # If the marine is in the last location in its path, we add it to the list of all possible indices with probability 1/2, and also probability 1/2 to the previous location in the path.
                 elif marine[1] == len(self.marines_paths[marine[0]]) - 1:
                     marines_info[marine[0]].append((marine[0], marine[1], 1/2))
                     marines_info[marine[0]].append((marine[0], marine[1]-1, 1/2))
+                # If the marine is in any other location in its path, we add it to the list of all possible indices with probability 1/3, and also probability 1/3 to the previous and next locations in the path.
                 else:
                     marines_info[marine[0]].append((marine[0], marine[1], 1/3))
                     marines_info[marine[0]].append((marine[0], marine[1]-1, 1/3))
@@ -644,6 +658,7 @@ class InfinitePirateAgent:
             all_marines_possible_locations_combinations = list(product(*marines_info.values()))  # A cartesian product, in order to get all possible combinations of marines' locations.
 
             treasures_info = {treasure[0]: list() for treasure in state[1]}
+            # For each treasure, we add all possible combinations of its name, location and probability of changing location to the list of all possible combinations of treasures' locations.
             for treasure in state[1]:
                 for possible_location in self.treasures[treasure[0]]['possible_locations']:
                     prob = self.treasures[treasure[0]]['prob_change_location']
@@ -652,72 +667,91 @@ class InfinitePirateAgent:
                     treasures_info[treasure[0]].append((treasure[0], possible_location, prob))
             all_treasures_possible_locations_combinations = list(product(*treasures_info.values()))  # A cartesian product, in order to get all possible combinations of treasures' locations.
   
+            # For each combination of marines' locations and treasures' locations, we add all possible combinations of pirates' locations and capacities to the list of all next states.
+            # We do that because the environment step (treasures and marines) is independent of the agent's step (pirates).
             for marines_action in all_marines_possible_locations_combinations:
                 for treasures_action in all_treasures_possible_locations_combinations:
-                    new_state_reward = 0
-                    prob = 1
+                    new_state_reward = 0  # Reward for doing the given action and reaching the next state.
+                    prob = 1  # Probability of reaching this state given this action.
                     pirates_info = tuple()
                     treasures_locations = tuple()
                     marines_locations = tuple()
             
+                    # For each pirate, we calculate the next location and capacity given the action and the current state.
                     for pirate, pirate_action in zip(state[0], action):
-                        capacity = pirate[2]
+                        capacity = pirate[2]  # If the action is not 'collect', 'deposit' or being caught by a marine, the capacity doesn't change.
                         pirate_next_location = pirate[1]  # If action is not 'sail', pirate_next_location doesn't change.
+                        
+                        # If the action is 'sail', we update the next location of the pirate.
                         if pirate_action[0] == 'sail':
                             pirate_next_location = pirate_action[2]
 
+                        # If the action is 'deposit', we add the reward for depositing the treasure to the new state reward, and update the capacity of the pirate.
                         if pirate_action[0] == 'deposit':
                             new_state_reward += DROP_IN_DESTINATION_REWARD * (2 - capacity)
                             capacity = 2
 
                         caught_by_marine = False
+                        # For each marine, we check if the pirate is caught by a marine in the next location.
                         for marine_action in marines_action:
                             marine_loc = self.marines_paths[marine_action[0]][marine_action[1]]
-                            prob *= marine_action[2]
-                            marines_locations += ((marine_action[0], marine_action[1]),)
+                            prob *= marine_action[2]  # We multiply the probability of this action and next state by the probability of the marine's movement.
+                            marines_locations += ((marine_action[0], marine_action[1]),)  # We add the new location of the marine to the new state.
                             
+                            # If the pirate is not depositing a treasure and the next location of the pirate is the same as the location of a marine, the pirate is caught by the marine.
                             if (pirate_action[0] != 'deposit') and (pirate_next_location == marine_loc):
                                 caught_by_marine = True
-                                    
+
+                        # If the pirate is not depositing a treasure and the action is 'collect', we update the capacity of the pirate.   
                         if (not caught_by_marine) and (pirate_action[0] == 'collect'):
                             capacity -= 1
 
+                        # If the pirate is caught by a marine, we add the penalty for being caught by a marine to the new state reward, and update the capacity of the pirate.
                         if caught_by_marine:
                             new_state_reward += MARINE_COLLISION_PENALTY
                             capacity = 2
 
-                        pirates_info += ((pirate[0], pirate_next_location, capacity),)
-                        
+                        pirates_info += ((pirate[0], pirate_next_location, capacity),)  # We add the new location and capacity of the pirate to the new state.
+
+                    # For each treasure, we calculate the next location of the treasure given the action and the current state.  
                     for treasure_action in treasures_action:
-                        prob *= treasure_action[2]
+                        prob *= treasure_action[2]  # We multiply the probability of this action and next state by the probability of the treasure's movement.
                         treasures_locations += ((treasure_action[0], treasure_action[1]),)
 
+                    # We add the new state to the list of all next states, with the probability of reaching this state given this action, and the reward for doing the given action and reaching the next state.
                     next_states_list.append(((pirates_info, treasures_locations, marines_locations), prob, new_state_reward))
-        self.next_states[(state, action)] = next_states_list
+        self.next_states[(state, action)] = next_states_list  # A dictionary of all next states given this state and action, so that we don't have to calculate it again for the same state and action.
 
 
     def updating_value(self, state):
-        max_value_and_action = (float('-inf'), None)
-        for action in self.actions(state): # all possible actions of the state
+        """ Update the value of the given state for the given time step using the value iterations algorithm. """
+        max_value_and_action = (float('-inf'), None)  # The maximum value and action for the given state and time step, initialized to the smallest possible value.
+        for action in self.actions(state): # Looping on all possible actions of the given state
+            # If the action is 'terminate', we set the maximum value and the corresponding action to the value we got up until now and 'terminate' respectively.
             if action == 'terminate':
-                max_value_and_action = (self.value_iterations[state][0], 'terminate')
+                max_value_and_action = (0, 'terminate')
                 continue
-            if (state, action) not in self.next_states:
+            if (state, action) not in self.next_states:  # If the next states of the given state and action are not already calculated, we calculate them.
                 self.find_next_states(state, action)
 
-            next_states_list = self.next_states[(state, action)]
+            next_states_list = self.next_states[(state, action)]  # all possible next states given this state and action
+            # We calculate the value of the given state and action using the value iterations algorithm,
+            # With a slight change, because the reward is on reaching the next state and depends on the action, instead of being on the current state.
             value_of_action = self.gamma * sum(next_state[1] * (next_state[2] + self.value_iterations[next_state[0]][0]) for next_state in next_states_list)
 
+            # If the value of the action is greater than the maximum value, we update the maximum value and action.
             if value_of_action >= max_value_and_action[0]:
                 max_value_and_action = (value_of_action, action)
-        self.value_iterations[state] = max_value_and_action  
+        self.value_iterations[state] = max_value_and_action  # We update the value of the given state and time step with the action that maximizes the value.
 
     def act(self, state):
-        state = self.create_state(state)
-        action = self.value_iterations[state][1]
+        state = self.create_state(state)  # Convert the given state to a tuple format according to our implementation.
+        action = self.value_iterations[state][1]  # Get the action that maximizes the value of the given state and the current time step.
+        print(state)
+        print(action)
+        print()
         return action
 
     def value(self, state):
         return self.value_iterations[state][0]  # The value of the action that maximizes the value of the given state.
-
 
