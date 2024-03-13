@@ -507,7 +507,9 @@ class InfinitePirateAgent:
     def __init__(self, initial, gamma):
         self.initial = initial
         self.gamma = gamma
-        self.map = initial['map']
+        self.map = initial['map']  
+        self.len_rows = len(self.map)
+        self.len_cols = len(self.map[0])
         self.epsilon = 10**(-2)
         base_row = [x for x in self.map if 'B' in x][0]
         self.base = (self.map.index(base_row), base_row.index('B'))
@@ -516,19 +518,23 @@ class InfinitePirateAgent:
 
         # list of all possible locations on the map
         possible_locations = list()
-        for i in range(len(self.map)):
-            for j in range(len(self.map[i])):
+        for i in range(self.len_rows):
+            for j in range(self.len_cols):
                 if self.map[i][j] != 'I':
                     possible_locations.append((i, j))
+        # all possible states for the pirates - each one includes the name, location and capacity of the pirate
         pirates_locations_and_capacities = {pirate: [(pirate, location, capacity) for capacity in range(3) for location in possible_locations] for pirate in initial['pirate_ships'].keys()}
         state_dict['pirates'] = list(product(*pirates_locations_and_capacities.values()))  # A cartesian product, in order to get all possible combinations of pirates' locations.
 
+        # all possible states for the treasures - each one includes the name of the treasure and its location
         treasures_info = {treasure: [(treasure, location) for location in initial['treasures'][treasure]['possible_locations']] for treasure in initial['treasures'].keys()}
         state_dict['treasures'] = list(product(*treasures_info.values()))  # A cartesian product, in order to get all possible combinations of treasures' locations.
 
+        # all possible states for the marines - each one includes the name and index of the marine
         marines_info = {marine: [(marine, index) for index in range(len(initial['marine_ships'][marine]['path']))] for marine in initial['marine_ships'].keys()}
         state_dict['marines'] = list(product(*marines_info.values()))  # A cartesian product, in order to get all possible combinations of marines' locations.
 
+        # all possible states for the game - each one includes the locations and capacities of the pirates, the locations of the treasures and the indices of the marines each in there paths
         all_states = list(product(*state_dict.values()))  # A cartesian product, in order to get all possible combinations of states.
         self.next_states = dict()
 
@@ -537,9 +543,8 @@ class InfinitePirateAgent:
         
         self.initial_state = self.create_state(initial)
 
-        self.len_rows = len(self.map)
-        self.len_cols = len(self.map[0])
         self.t = 0
+        # Calculating the value of each state for each time step using value iterations algorithm until convergence.
         while True:
             max_state = float('-inf')
             for state in all_states:
@@ -557,12 +562,26 @@ class InfinitePirateAgent:
             self.t += 1
 
     def is_valid_location(self, x, y):
+        """
+        This function checks if the given location is valid for the pirates to sail to.
+        :param x: the x coordinate of the location
+        :param y: the y coordinate of the location
+        """
         return (0 <= x < self.len_rows) and (0 <= y < self.len_cols) and (self.map[x][y] != 'I')
     
     def is_valid_island(self, x, y):
+        """
+        This function checks if the given location is an island on the map.
+        :param x: the x coordinate of the location
+        :param y: the y coordinate of the location
+        """
         return (0 <= x < self.len_rows) and (0 <= y < self.len_cols) and (self.map[x][y] == 'I')
     
     def create_state(self, initial):
+        """
+        This function converts the given state of the game to our state representation.
+        :param initial: the current state of the game (a dictionary)
+        """
         pirates_info = tuple()
         for pirate in initial['pirate_ships'].keys():
             pirates_info += ((pirate, initial['pirate_ships'][pirate]['location'], initial['pirate_ships'][pirate]['capacity']),)
@@ -585,6 +604,10 @@ class InfinitePirateAgent:
 
 
     def actions(self, state):
+        """
+        This function returns all possible actions for the given state.
+        :param state: the current state of the game (a tuple)
+        """
         pirates_actions = dict()
         pirates_info = state[0]
         all_possible_actions = list()
@@ -592,23 +615,28 @@ class InfinitePirateAgent:
         all_possible_actions.append('terminate')
         all_possible_actions.append('reset')
 
+        # each pirate can wait always
         for pirate in pirates_info:
             pirates_actions[pirate] = list()
             pirates_actions[pirate].append(('wait', pirate[0]))
 
+            # all possiblities for the pirates to move to
             for index_change in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                 new_x = pirate[1][0] + index_change[0]
                 new_y = pirate[1][1] + index_change[1]
                 if self.is_valid_location(new_x, new_y):
                     pirates_actions[pirate].append(('sail', pirate[0], (new_x, new_y)))
 
+                # if the pirates are next to a treasure and have a capacity to collect it, they can collect it
                 if self.is_valid_island(new_x, new_y) and pirate[2] > 0:
                     for treasure in state[1]:
                         if (new_x, new_y) == treasure[1]:
                             pirates_actions[pirate].append(('collect', pirate[0], treasure[0]))
+            # if the pirates are in the base and have treasures, they can deposit them
             if (pirate[1] == self.base) and (pirate[2] < 2):
                 pirates_actions[pirate].append(('deposit', pirate[0]))
 
+        # all possible combinations of the actions of the pirates
         all_possible_actions += list(product(*pirates_actions.values()))
         return all_possible_actions
             
