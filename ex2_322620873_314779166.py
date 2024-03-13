@@ -3,7 +3,6 @@ ids = ["322620873", "314779166"]
 RESET_PENALTY = -2
 DROP_IN_DESTINATION_REWARD = 4
 MARINE_COLLISION_PENALTY = -1
-GAMMA = 0.9
 
 from itertools import product
 
