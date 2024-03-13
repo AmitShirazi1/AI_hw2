@@ -293,7 +293,7 @@ class PirateAgent:
         treasures_info = dict()
         for treasure in initial['treasures'].keys():
             self.treasures[treasure] = dict()
-            # list of all possible locations for each treasure
+            # list of all possible locations for each treasure.
             possible_locations = initial['treasures'][treasure]['possible_locations']
             self.treasures[treasure]['possible_locations'] = possible_locations
             # the probability of changing location for each treasure for each location it can be in
