@@ -191,7 +191,7 @@ class OptimalPirateAgent:
         max_value_and_action = (float('-inf'), None)
         for action in self.actions(state): # all possible actions of the state
             if action == 'terminate':
-                max_value_and_action = (0, 'terminate') #[(self.value_iterations[state][t-1][0], 'terminate')]
+                max_value_and_action = (self.value_iterations[state][t-1][0], 'terminate') #[(self.value_iterations[state][t-1][0], 'terminate')]
                 continue
             if (state, action) not in self.next_states:
                 self.find_next_states(state, action)
@@ -212,16 +212,20 @@ class OptimalPirateAgent:
 
 class PirateAgent:
     def __init__(self, initial):
-        start = time.time()
         self.map = initial['map']
         self.time_step = initial['turns to go']
+        self.len_rows = len(self.map)
+        self.len_cols = len(self.map[0])
+        # base - the location where all pirates start from
         self.base = list(initial['pirate_ships'].values())[0]['location']
         state_dict = dict()
 
         self.num_pirates = len(initial['pirate_ships'])
+
+        # list of all possible locations on the map
         possible_locations = list()
-        for i in range(len(self.map)):
-            for j in range(len(self.map[i])):
+        for i in range(self.len_rows):
+            for j in range(self.len_cols):
                 if self.map[i][j] != 'I':
                     possible_locations.append((i, j))
         # We refer to all pirates as one pirate - all pirates will do the same move in a given action as if there is only one pirate in the game
@@ -232,8 +236,10 @@ class PirateAgent:
         treasures_info = dict()
         for treasure in initial['treasures'].keys():
             self.treasures[treasure] = dict()
+            # list of all possible locations for each treasure
             possible_locations = initial['treasures'][treasure]['possible_locations']
             self.treasures[treasure]['possible_locations'] = possible_locations
+            # the probability of changing location for each treasure for each location it can be in
             self.treasures[treasure]['prob_change_location'] = initial['treasures'][treasure]['prob_change_location']/len(possible_locations)
             treasures_info[treasure] = [(treasure, location) for location in initial['treasures'][treasure]['possible_locations']]
         state_dict['treasures'] = list(product(*treasures_info.values()))  # A cartesian product, in order to get all possible combinations of treasures' locations.
@@ -241,26 +247,19 @@ class PirateAgent:
         self.marines_info = tuple()
         for marine in initial['marine_ships'].keys():
             marine_locations = initial['marine_ships'][marine]['path']
+            # the probability of the marine's location to be in each position in its path is uniformly distributed
             prob = 1/len(marine_locations)
             self.marines_info += ((marine_locations, prob),)
        
         all_states = list(product(*state_dict.values()))  # A cartesian product, in order to get all possible combinations of states.
         self.next_states = dict()
 
-        all_states_time = time.time()
-        print('all states time:', all_states_time - start)
-
-        self.value_iterations = dict() #{state: [(0, None)]*(initial['turns to go']+1) for state in all_states} # A dictionary of all possible states, with a list of 100 tuples, each tuple contains the action that maximizes the value and the value of the state.
-        # self.value_iterations[state] = (value of the state, action that maximizes the value)
+        self.value_iterations = dict() # A dictionary of all possible states, with a list of 100 tuples, each tuple contains the action that maximizes the value and the value of the state.
+        # self.value_iterations[state][t] = (value of the state, action that maximizes the value)
         
         self.initial_state = self.create_state(initial)
 
-        self.len_rows = len(self.map)
-        self.len_cols = len(self.map[0])
-        starting_value_iteration = time.time()
-        print('starting value iteration:', starting_value_iteration - start)
         for t in range(0, 1+initial['turns to go']):
-            print('t =', t, 'iteration:', time.time() - starting_value_iteration)
             for state in all_states:
                 if t == 0:
                     self.value_iterations[state] = [(0, None)]*(1+initial['turns to go'])
@@ -268,12 +267,26 @@ class PirateAgent:
                     self.updating_value(state, t)
 
     def is_valid_location(self, x, y):
+        """
+        This function checks if the given location is valid for the pirates to sail to.
+        :param x: the x coordinate of the location
+        :param y: the y coordinate of the location
+        """
         return (0 <= x < self.len_rows) and (0 <= y < self.len_cols) and (self.map[x][y] != 'I')
     
     def is_valid_island(self, x, y):
+        """
+        This function checks if the given location is an island in the map.
+        :param x: the x coordinate of the location
+        :param y: the y coordinate of the location
+        """
         return (0 <= x < self.len_rows) and (0 <= y < self.len_cols) and (self.map[x][y] == 'I')
     
     def create_state(self, initial):
+        """
+        This function converts the given state of the game to our state representation.
+        :param initial: the current state of the game (a dictionary)
+        """
         pirates_info = (initial['pirate_ships'][self.pirates_names[0]]['location'], initial['pirate_ships'][self.pirates_names[0]]['capacity'])
 
         treasures_locations = tuple()
@@ -284,6 +297,10 @@ class PirateAgent:
 
 
     def actions(self, state):
+        """
+        This function returns all possible actions for the given state.
+        :param state: the current state of the game (a tuple)
+        """
         pirates_info = state[0]
         all_possible_actions = list()
 
@@ -291,22 +308,31 @@ class PirateAgent:
         all_possible_actions.append('reset')
         all_possible_actions.append(('wait',))
 
+        # all possiblities for the pirates to move to
         for index_change in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
             new_x = pirates_info[0][0] + index_change[0]
             new_y = pirates_info[0][1] + index_change[1]
             if self.is_valid_location(new_x, new_y):
                 all_possible_actions.append(('sail', (new_x, new_y)))
 
+            # if the pirates are next to a treasure and have a capacity to collect it, they can collect it
             if self.is_valid_island(new_x, new_y) and pirates_info[1] > 0:
                 for treasure in state[1]:
                     if (new_x, new_y) == treasure[1]:
                         all_possible_actions.append(('collect', treasure[0]))
+        
+        # if the pirates are in the base and have treasures, they can deposit them
         if (pirates_info[0] == self.base) and (pirates_info[1] < 2):
             all_possible_actions.append(('deposit',))
 
         return all_possible_actions
             
     def find_next_states(self, state, action):
+        """
+        This function finds all possible next states for the given state and action.
+        :param state: the current state of the game (a tuple)
+        :param action: the action to be taken (a tuple)
+        """
         next_states_list = list()
 
         if action == 'reset':
@@ -320,14 +346,17 @@ class PirateAgent:
         
         else:
             treasures_info = {treasure[0]: list() for treasure in state[1]}
+            # creating possible states for the treasures
             for treasure in state[1]:
                 for possible_location in self.treasures[treasure[0]]['possible_locations']:
                     prob = self.treasures[treasure[0]]['prob_change_location']
                     if possible_location == treasure[1]:
+                        # the probability of the treasure of staying in its current location (probability to move to this location or staying there)
                         prob += (1 - prob*len(self.treasures[treasure[0]]['possible_locations']))
                     treasures_info[treasure[0]].append((treasure[0], possible_location, prob))
             all_treasures_possible_locations_combinations = list(product(*treasures_info.values()))  # A cartesian product, in order to get all possible combinations of treasures' locations.
             pirates = state[0]
+
             for treasures_action in all_treasures_possible_locations_combinations:
                 new_state_reward = 0
                 prob = 1
@@ -340,18 +369,21 @@ class PirateAgent:
                     pirate_next_location = action[1]
 
                 if action[0] == 'deposit':
+                    # all pirates gets the reward for depositing the treasures
                     new_state_reward += DROP_IN_DESTINATION_REWARD * (2 - capacity) * self.num_pirates
                     capacity = 2
 
                 caught_by_marine = 0
                 for marine in self.marines_info:                    
                     if (action[0] != 'deposit') and (pirate_next_location in marine[0]):
+                        # the probability of the marine to be in the location of the pirate
                         caught_by_marine += marine[1]
                             
                 if (not caught_by_marine) and (action[0] == 'collect'):
                     capacity -= 1
 
                 if caught_by_marine:
+                    # sum of the penalties for all pirates if caught by any marine w.r.t the sum of probabilities of the marines they encountered to be in the location of the pirate (the pirate represents all pirates)
                     new_state_reward += MARINE_COLLISION_PENALTY * self.num_pirates * caught_by_marine
                     capacity = 2
 
@@ -361,16 +393,23 @@ class PirateAgent:
                     prob *= treasure_action[2]
                     treasures_locations += ((treasure_action[0], treasure_action[1]),)
 
+                # appending the new state to the list of next states
                 next_states_list.append(((pirates_info, treasures_locations), prob, new_state_reward))
+        # saving the next states for the given state and action in a dictionary (later will save time for the same state and action)
         self.next_states[(state, action)] = next_states_list
 
 
     def updating_value(self, state, t):
-        # if time > 280 get out
+        """
+        This function updates the value of the given state at time t.
+        :param state: the current state of the game (a tuple)
+        :param t: the current time step in the game
+        """
         max_value_and_action = (float('-inf'), None)
         for action in self.actions(state): # all possible actions of the state
             if action == 'terminate':
-                max_value_and_action = (0, 'terminate') #[(self.value_iterations[state][t-1][0], 'terminate')]
+                # if the action is terminate, the value of the state is 0 and the action is terminate
+                max_value_and_action = (self.value_iterations[state][t-1][0], 'terminate')
                 continue
             if (state, action) not in self.next_states:
                 self.find_next_states(state, action)
@@ -378,14 +417,21 @@ class PirateAgent:
             next_states_list = self.next_states[(state, action)]
             value_of_action = sum(next_state[1] * (next_state[2] + self.value_iterations[next_state[0]][t-1][0]) for next_state in next_states_list)
 
+            # updating the maximum value and its action for the state at time t
             if value_of_action >= max_value_and_action[0]:
                 max_value_and_action = (value_of_action, action)
         self.value_iterations[state][t] = max_value_and_action  
 
 
     def act(self, state):
+        """
+        This function returns the action to be taken for the given state.
+        :param state: the current state of the game (a dictionary)
+        """
         state = self.create_state(state)
+        # taking the action that maximizes the value of the state at the current time step
         action = self.value_iterations[state][self.time_step][1]
+        # assigning the actions as required for the game
         if type(action) == tuple:
             length = len(action)
             action_all_pirates = tuple()
@@ -396,7 +442,7 @@ class PirateAgent:
                     action_all_pirates += ((action[0], pirate, action[1]),)
         else:
             action_all_pirates = action
-
+        # decreasing the time step
         self.time_step -= 1
         return action_all_pirates
 
@@ -411,7 +457,7 @@ class InfinitePirateAgent:
         state_dict = dict()
         self.terminated = False
 
-
+        # list of all possible locations on the map
         possible_locations = list()
         for i in range(len(self.map)):
             for j in range(len(self.map[i])):
@@ -597,7 +643,7 @@ class InfinitePirateAgent:
         max_value_and_action = (float('-inf'), None)
         for action in self.actions(state): # all possible actions of the state
             if action == 'terminate':
-                max_value_and_action = (0, 'terminate')
+                max_value_and_action = (self.value_iterations[state][0], 'terminate')
                 continue
             if (state, action) not in self.next_states:
                 self.find_next_states(state, action)
@@ -612,9 +658,6 @@ class InfinitePirateAgent:
     def act(self, state):
         state = self.create_state(state)
         action = self.value_iterations[state][1]
-        print(state)
-        print(action)
-        print()
         return action
 
     def value(self, state):
