@@ -431,9 +431,10 @@ class PirateAgent:
 
                 caught_by_marine = 0
                 for marine in self.marines_info:                    
-                    if (action[0] != 'deposit') and (pirate_next_location in marine[0]):
-                        # the probability of the marine to be in the location of the pirate
-                        caught_by_marine += marine[1]
+                    if (action[0] != 'deposit'):
+                        # The probability of the marine to be in the location of the pirate.
+                        # If the marines is in this location more than once in its path, the probability is bigger.
+                        caught_by_marine += marine[0].count(pirate_next_location) * marine[1]
                             
                 if (not caught_by_marine) and (action[0] == 'collect'):
                     capacity -= 1
@@ -774,9 +775,6 @@ class InfinitePirateAgent:
     def act(self, state):
         state = self.create_state(state)  # Convert the given state to a tuple format according to our implementation.
         action = self.value_iterations[state][1]  # Get the action that maximizes the value of the given state and the current time step.
-        print(state)
-        print(action)
-        print()
         return action
 
     def value(self, state):
